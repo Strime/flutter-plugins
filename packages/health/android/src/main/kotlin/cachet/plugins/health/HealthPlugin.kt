@@ -1,14 +1,17 @@
 package cachet.plugins.health
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Handler
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.NonNull
+import androidx.core.content.ContextCompat
 import androidx.health.connect.client.feature.ExperimentalFeatureAvailabilityApi
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
@@ -667,6 +670,43 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
         healthConnectRequestPermissionsLauncher!!.launch(permList.toSet())
     }
 
+
+    // Function to check if location permissions are granted
+    private fun isLocationPermissionGranted(): Boolean {
+        val fineLocationGranted = ContextCompat.checkSelfPermission(
+            context!!,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val coarseLocationGranted = ContextCompat.checkSelfPermission(
+            context!!,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        return fineLocationGranted || coarseLocationGranted
+    }
+
+    // Function to check Health Connect distance permission
+    private fun isHealthDistancePermissionGranted(): Boolean {
+        // For Health Connect permissions
+        val healthDistancePermission = "android.permission.health.READ_DISTANCE"
+
+        return ContextCompat.checkSelfPermission(
+            context!!,
+            healthDistancePermission
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+    // Function to check Health Connect total calories burned permission
+    private fun isHealthTotalCaloriesBurnedPermissionGranted(): Boolean {
+        // For Health Connect permissions
+        val healthDistancePermission = "android.permission.health.READ_TOTAL_CALORIES_BURNED"
+
+        return ContextCompat.checkSelfPermission(
+            context!!,
+            healthDistancePermission
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     /** Get all datapoints of the DataType within the given time range */
     private fun getData(call: MethodCall, result: Result) {
         val dataType = call.argument<String>("dataTypeKey")!!
@@ -734,43 +774,58 @@ class HealthPlugin(private var channel: MethodChannel? = null) :
 
                         for (rec in filteredRecords) {
                             val record = rec as ExerciseSessionRecord
-                            val distanceRequest =
-                                healthConnectClient.readRecords(
-                                    ReadRecordsRequest(
-                                        recordType =
-                                        DistanceRecord::class,
-                                        timeRangeFilter =
-                                        TimeRangeFilter.between(
-                                            record.startTime,
-                                            record.endTime,
-                                        ),
-                                    ),
-                                )
                             var totalDistance = 0.0
-                            for (distanceRec in distanceRequest.records) {
-                                totalDistance +=
-                                    distanceRec.distance
-                                        .inMeters
+                            if (isLocationPermissionGranted() && isHealthDistancePermissionGranted()) {
+                                val distanceRequest =
+                                    healthConnectClient.readRecords(
+                                        ReadRecordsRequest(
+                                            recordType =
+                                                DistanceRecord::class,
+                                            timeRangeFilter =
+                                                TimeRangeFilter.between(
+                                                    record.startTime,
+                                                    record.endTime,
+                                                ),
+                                        ),
+                                    )
+                                for (distanceRec in distanceRequest.records) {
+                                    totalDistance +=
+                                        distanceRec.distance
+                                            .inMeters
+                                }
+                            } else {
+                                Log.i(
+                                    "FLUTTER_HEALTH",
+                                    "Skipping distance data retrieval for workout due to missing permissions (location or health distance)"
+                                )
                             }
 
-                            val energyBurnedRequest =
-                                healthConnectClient.readRecords(
-                                    ReadRecordsRequest(
-                                        recordType =
-                                        TotalCaloriesBurnedRecord::class,
-                                        timeRangeFilter =
-                                        TimeRangeFilter.between(
-                                            record.startTime,
-                                            record.endTime,
-                                        ),
-                                    ),
-                                )
                             var totalEnergyBurned = 0.0
-                            for (energyBurnedRec in
-                            energyBurnedRequest.records) {
-                                totalEnergyBurned +=
-                                    energyBurnedRec.energy
-                                        .inKilocalories
+                            if (isHealthTotalCaloriesBurnedPermissionGranted()) {
+
+                                val energyBurnedRequest =
+                                    healthConnectClient.readRecords(
+                                        ReadRecordsRequest(
+                                            recordType =
+                                                TotalCaloriesBurnedRecord::class,
+                                            timeRangeFilter =
+                                                TimeRangeFilter.between(
+                                                    record.startTime,
+                                                    record.endTime,
+                                                ),
+                                        ),
+                                    )
+                                for (energyBurnedRec in
+                                energyBurnedRequest.records) {
+                                    totalEnergyBurned +=
+                                        energyBurnedRec.energy
+                                            .inKilocalories
+                                }
+                            }  else {
+                                Log.i(
+                                    "FLUTTER_HEALTH",
+                                    "Skipping total calories burned data retrieval for workout due to missing permissions (location or health distance)"
+                                )
                             }
 
                             val stepRequest =
